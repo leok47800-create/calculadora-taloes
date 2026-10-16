@@ -13,6 +13,10 @@ Abra `index.html` no navegador (Chrome ou Edge recomendados) ou acesse o link do
 
 ## Dados
 
-Tudo fica salvo só no navegador de quem usa (localStorage). Nenhum talão é enviado para a internet nem para este repositório.
+Os talões ficam no **Firebase (Firestore)**, sincronizados em tempo real entre todos os aparelhos liberados, e continuam funcionando sem internet (sincronizam quando a conexão volta). Nenhum talão fica neste repositório.
 
-O app é um único arquivo HTML, sem dependências para instalar. Ele só busca as fontes no Google Fonts.
+- O acesso é por login com conta Google. O administrador libera os e-mails dos funcionários em **Personalizar → Conta e acesso**.
+- As permissões estão em [`firestore.rules`](firestore.rules). A configuração do Firebase no `index.html` não é segredo: quem protege os dados são essas regras.
+- Referência digitada, modo de soma, aparência e pasta dos relatórios ficam só no aparelho de cada um.
+
+O app é um único arquivo HTML, sem etapa de build. Ele carrega o SDK do Firebase e as fontes por CDN.
