@@ -245,16 +245,12 @@ button:disabled{opacity:.5;cursor:not-allowed}
 /* Folha impressa: só o relatório, fundo branco, letra grande para leitura no setor */
 #impressao{display:none}
 @media print{
-  @page{size:A4;margin:14mm}
+  @page{size:A4;margin:0}
   body>*:not(#impressao){display:none!important}
   :root{color-scheme:light!important}
   html,body{background:#fff!important;color:#000}
-  #impressao{display:block;font-family:var(--body);color:#000}
-  .imp-cab{display:flex;align-items:center;gap:14px;padding-bottom:10px;border-bottom:2px solid #000}
-  .imp-cab img{width:52px;height:52px}
-  .imp-cab h1{font-family:var(--display);font-size:22pt;margin:0;line-height:1}
-  .imp-cab p{margin:4px 0 0;font-size:10pt;color:#444}
-  .imp-ref{font-family:var(--display);font-weight:700;font-size:20pt;margin:14px 0 2px}
+  #impressao{display:block;font-family:var(--body);color:#000;padding:14mm}
+  .imp-ref{font-family:var(--display);font-weight:700;font-size:22pt;margin:0 0 2px}
   .imp-meta{font-size:10.5pt;color:#333;margin:0 0 12px}
   .imp-tab{width:100%;border-collapse:collapse;font-size:15pt}
   .imp-tab th{font-size:9.5pt;text-transform:uppercase;letter-spacing:.08em;color:#444;text-align:left;border-bottom:1.5px solid #000;padding:6px 10px}
@@ -265,7 +261,6 @@ button:disabled{opacity:.5;cursor:not-allowed}
   .imp-tab .z td{color:#999;font-weight:400}
   .imp-tab tfoot td,.imp-tab tfoot td.n{color:#000;border-top:2px solid #000;border-bottom:0;font-size:17pt;font-weight:700;padding-top:10px}
   .imp-tab tr{break-inside:avoid}
-  .imp-rodape{margin-top:18px;font-size:9pt;color:#666}
 }
 </style>
 </head>
@@ -613,13 +608,10 @@ function montaImpressao(){
   const d=new Date(), p=n=>String(n).padStart(2,"0");
   const dh=`${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} às ${p(d.getHours())}:${p(d.getMinutes())}`;
   const ref=$("ref").value.trim()||"Sem referência";
-  const logo=document.querySelector(".logo").src;
-  $("impressao").innerHTML=`<div class="imp-cab"><img src="${logo}" alt=""><div><h1>${esc(cfg.nome||PADRAO.nome)}</h1><p>Relatório de produção</p></div></div>`+
-    `<p class="imp-ref">${esc(ref)}</p><p class="imp-meta">Emitido em ${dh} · ${taloes.length} ${taloes.length===1?"talão lançado":"talões lançados"}</p>`+
+  $("impressao").innerHTML=`<p class="imp-ref">${esc(ref)}</p><p class="imp-meta">Emitido em ${dh} · ${taloes.length} ${taloes.length===1?"talão lançado":"talões lançados"}</p>`+
     `<table class="imp-tab"><thead><tr><th>Tamanho</th><th class="n">Pares</th><th></th></tr></thead><tbody>`+
     lin.map(l=>`<tr class="${l.total?"":"z"}"><td>${l.rotulo}</td><td class="n">${l.total}</td><td></td></tr>`).join("")+
-    `</tbody><tfoot><tr><td>Total geral</td><td class="n">${geral} pares</td><td></td></tr></tfoot></table>`+
-    `<p class="imp-rodape">Calculadora de Talões</p>`;
+    `</tbody><tfoot><tr><td>Total geral</td><td class="n">${geral} pares</td><td></td></tr></tfoot></table>`;
 }
 window.addEventListener("beforeprint",montaImpressao);
 $("btnImprimir").onclick=()=>{
