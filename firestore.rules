@@ -1,13 +1,30 @@
 rules_version = '2';
+// Papéis:
+//  dono        -> e-mail fixo abaixo; vê e altera tudo, gerencia supervisores, funcionários e o bloqueio
+//  supervisor  -> config/acesso.supervisores; vê e altera os talões de todos, gerencia só a lista de funcionários
+//  funcionário -> config/acesso.emails; vê e altera só os próprios talões (campo uid)
+// Com config/acesso.bloqueado = true, só o dono entra.
 service cloud.firestore {
   match /databases/{database}/documents {
     function logado() { return request.auth != null && request.auth.token.email_verified == true; }
-    function admin() { return logado() && request.auth.token.email == 'leok47800@gmail.com'; }
-    function liberado() {
-      return admin() || (logado() && exists(/databases/$(database)/documents/config/acesso)
-        && request.auth.token.email.lower() in get(/databases/$(database)/documents/config/acesso).data.emails);
+    function email() { return request.auth.token.email.lower(); }
+    function dono() { return logado() && email() == 'leok47800@gmail.com'; }
+    function cfg() { return get(/databases/$(database)/documents/config/acesso).data; }
+    function ativo() { return exists(/databases/$(database)/documents/config/acesso) && cfg().get('bloqueado', false) == false; }
+    function supervisor() { return logado() && ativo() && email() in cfg().get('supervisores', []); }
+    function funcionario() { return logado() && ativo() && email() in cfg().get('emails', []); }
+    function meu(dados) { return dados.uid == request.auth.uid; }
+
+    match /config/acesso {
+      allow read: if dono() || supervisor();
+      allow write: if dono()
+        || (supervisor() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emails']));
     }
-    match /config/acesso { allow read, write: if admin(); }
-    match /taloes/{id} { allow read, write: if liberado(); }
+    match /taloes/{id} {
+      allow read: if dono() || supervisor() || (funcionario() && meu(resource.data));
+      allow create: if (dono() || supervisor() || funcionario()) && meu(request.resource.data);
+      allow update: if dono() || supervisor() || (funcionario() && meu(resource.data) && meu(request.resource.data));
+      allow delete: if dono() || supervisor() || (funcionario() && meu(resource.data));
+    }
   }
 }

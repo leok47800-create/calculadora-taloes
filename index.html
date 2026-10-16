@@ -215,6 +215,9 @@ textarea{width:100%;font-family:var(--mono);font-size:.8rem;padding:12px;min-hei
 .pasta-botoes .b-mini{margin-left:0}
 button:disabled{opacity:.5;cursor:not-allowed}
 .jan-campos{display:grid}
+.ver{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;background:var(--card);border-radius:var(--raio);box-shadow:var(--sombra);padding:12px 16px}
+.ver label{font-weight:600}
+.ver select{font:inherit;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:var(--raio-campo);padding:9px 12px;flex:1 1 240px;max-width:440px;min-width:0}
 .entrar{justify-items:center;text-align:center;max-width:440px;width:100%;margin:10vh auto 0;padding:36px 24px;gap:14px}
 .entrar .logo{width:72px;height:72px;border-radius:18px}
 .entrar h1{font-size:2rem}
@@ -309,7 +312,13 @@ button:disabled{opacity:.5;cursor:not-allowed}
     <p id="janTexto"></p>
   </section>
 
-  <section>
+  <div class="ver" id="barraVer" hidden>
+    <label for="verPessoa">Talões de</label>
+    <select id="verPessoa"></select>
+    <span class="ajuda" id="verNota"></span>
+  </div>
+
+  <section id="secLancar">
     <h2>Talão atual</h2>
     <div class="ref"><input id="ref" placeholder="Referência / cor do relatório (ex: 5478 PRIME PRATA DEB BIQ)" autocomplete="off" enterkeyhint="next" aria-label="Referência ou cor do relatório"></div>
     <div class="dica">
@@ -347,7 +356,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
       <button class="b-danger" id="btnZerar">Zerar tudo</button>
     </div>
     <div class="confirm" id="confirmZerar" hidden>
-      <span>Apagar todos os talões e totais?</span>
+      <span id="confirmZerarTxt">Apagar todos os talões e totais?</span>
       <button class="b-ghost" id="naoZerar">Cancelar</button>
       <button class="b-danger solid" id="simZerar">Sim, zerar</button>
     </div>
@@ -471,12 +480,23 @@ button:disabled{opacity:.5;cursor:not-allowed}
       <div class="opc-txt"><span class="rot">Conectado como</span><span class="ajuda" id="cfgConta"></span></div>
       <span class="pasta-botoes"><button class="b-ghost b-mini" id="btnSair">Sair da conta</button></span>
     </div>
-    <div class="opc opc-alto" id="cfgAdmin" hidden>
-      <div class="opc-txt"><label class="rot" for="acessoEmail">Funcionários liberados</label><span class="ajuda">Cada um entra com a conta Google deste e-mail. Remover tira o acesso na hora.</span></div>
+    <div class="opc opc-alto" id="cfgSup" hidden>
+      <div class="opc-txt"><label class="rot" for="supEmail">Supervisores</label><span class="ajuda">Veem e imprimem os talões de todos e liberam funcionários.</span></div>
+      <div class="acesso">
+        <form class="acesso-add" id="supForm"><input id="supEmail" type="email" placeholder="email.da.empresa@gmail.com" autocomplete="off" required><button class="b-ghost" type="submit">Liberar</button></form>
+        <ul class="lista-acesso" id="listaSup"></ul>
+      </div>
+    </div>
+    <div class="opc opc-alto" id="cfgFunc" hidden>
+      <div class="opc-txt"><label class="rot" for="acessoEmail">Funcionários</label><span class="ajuda">Cada um vê e lança só os próprios talões, entrando com a conta Google deste e-mail.</span></div>
       <div class="acesso">
         <form class="acesso-add" id="acessoForm"><input id="acessoEmail" type="email" placeholder="email@gmail.com" autocomplete="off" required><button class="b-ghost" type="submit">Liberar</button></form>
         <ul class="lista-acesso" id="listaAcesso"></ul>
       </div>
+    </div>
+    <div class="opc" id="cfgBloq" hidden>
+      <div class="opc-txt"><label class="rot" for="cfgBloqueado">Bloquear calculadora</label><span class="ajuda">Ligado, ninguém entra além de você: nem supervisores, nem funcionários. Os talões continuam guardados.</span></div>
+      <span class="switch"><input type="checkbox" role="switch" id="cfgBloqueado"></span>
     </div>
   </section>
 
@@ -502,8 +522,46 @@ const salvar=()=>{try{localStorage.setItem(KEY,JSON.stringify({ref:$("ref").valu
 const nuvem={adicionar(){toast("Conectando, tente de novo")},atualizar(){},remover(){},removerVarios(){}};
 let usuario=null;
 const nomeUsuario=()=>usuario?((usuario.displayName||"").split(" ")[0]||usuario.email.split("@")[0]):"";
+// "todos" = tudo que este usuário pode ver; "taloes" = o que está na tela (filtrado por pessoa)
+let todos=[], papel=null, verPessoa="todos";
+try{verPessoa=localStorage.getItem("calc-taloes-ver")||"todos"}catch(e){}
+const vePessoas=()=>papel==="dono"||papel==="supervisor";
+function pessoas(){
+  const m=new Map();
+  todos.forEach(t=>{if(!t.uid)return;const p=m.get(t.uid)||{nome:t.por||t.email||"?",email:t.email||"",n:0};p.n++;m.set(t.uid,p)});
+  return [...m.entries()].sort((a,b)=>a[1].nome.localeCompare(b[1].nome));
+}
+function aplicaFiltro(){
+  if(vePessoas()&&verPessoa!=="todos"&&!todos.some(t=>t.uid===verPessoa))verPessoa="todos";
+  taloes=vePessoas()&&verPessoa!=="todos"?todos.filter(t=>t.uid===verPessoa):todos;
+  if(editando&&!taloes.some(t=>t.id===editando)){editando=null;limparCampos()}
+  if(confirmando&&!taloes.some(t=>t.id===confirmando))confirmando=null;
+}
+// referência do relatório: a digitada, ou (consultando outra pessoa / campo vazio) as dos talões na tela
+function refRelatorio(){
+  const campo=$("ref").value.trim();
+  if(campo&&!$("secLancar").hidden)return campo;
+  return [...new Set(taloes.map(t=>(t.ref||"").trim()).filter(Boolean))].join(" / ")||campo;
+}
+const nomeVisto=()=>{if(!vePessoas()||verPessoa==="todos")return "";const p=pessoas().find(([u])=>u===verPessoa);return p?p[1].nome:""};
+function renderVer(){
+  const bar=$("barraVer");bar.hidden=!vePessoas();
+  // vendo outra pessoa: só consulta (o talão lançado aqui seria de quem está logado)
+  const outro=vePessoas()&&verPessoa!=="todos"&&usuario&&verPessoa!==usuario.uid;
+  $("secLancar").hidden=outro;
+  if(bar.hidden)return;
+  const ps=pessoas();
+  $("verPessoa").innerHTML=`<option value="todos">Todos (${todos.length} ${todos.length===1?"talão":"talões"})</option>`+
+    ps.map(([u,p])=>`<option value="${u}">${esc(p.nome)}${p.email?" — "+esc(p.email):""} (${p.n})</option>`).join("");
+  $("verPessoa").value=verPessoa;
+  $("verNota").textContent=outro?"Só consulta: para lançar, escolha Todos ou você mesmo.":"";
+}
 $("ref").value=refSalva;
 $("ref").addEventListener("input",salvar);
+$("verPessoa").addEventListener("change",()=>{
+  verPessoa=$("verPessoa").value;try{localStorage.setItem("calc-taloes-ver",verPessoa)}catch(e){}
+  editando=confirmando=null;limparCampos();aplicaFiltro();render();
+});
 
 // monta os campos da grade
 const grade=$("grade");
@@ -554,6 +612,7 @@ function renderTabela(){
   $("rodape").textContent=geral;
 }
 function render(){
+  renderVer();
   const geral=totais().reduce((a,b)=>a+b,0);
   renderTabela();
   $("modoUnico").setAttribute("aria-pressed",String(modo!=="par"));
@@ -602,9 +661,10 @@ function relatorio(){
   const lin=linhas(), geral=lin.reduce((a,l)=>a+l.total,0);
   const d=new Date(), p=n=>String(n).padStart(2,"0");
   const dh=`${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-  const ref=$("ref").value.trim()||"SEM REFERÊNCIA";
+  const ref=refRelatorio()||"SEM REFERÊNCIA";
   const L=[];
   L.push(`    ${ref}`);
+  if(nomeVisto())L.push(`Funcionário: ${nomeVisto()}`);
   L.push(`Data/Hora do Registro: ${dh}`);
   L.push(`TAMANHO`.padEnd(22)+`TOTAL ACUMULADO`);
   L.push("-".repeat(40));
@@ -643,7 +703,10 @@ $("hist").addEventListener("click",e=>{
   }
 });
 $("btnDesfazer").onclick=()=>{const u=taloes[taloes.length-1];if(!u)return;nuvem.remover(u.id);toast("Último talão desfeito")};
-$("btnZerar").onclick=()=>{$("confirmZerar").hidden=false;$("naoZerar").focus()};
+$("btnZerar").onclick=()=>{
+  $("confirmZerarTxt").textContent=nomeVisto()?`Apagar todos os talões de ${nomeVisto()}?`:vePessoas()?"Apagar os talões de todas as pessoas?":"Apagar todos os talões e totais?";
+  $("confirmZerar").hidden=false;$("naoZerar").focus();
+};
 $("naoZerar").onclick=()=>{$("confirmZerar").hidden=true};
 $("modoUnico").onclick=()=>{modo="unico";salvar();render()};
 $("modoPar").onclick=()=>{modo="par";salvar();render()};
@@ -654,8 +717,8 @@ function montaImpressao(){
   const lin=linhas(), geral=lin.reduce((a,l)=>a+l.total,0);
   const d=new Date(), p=n=>String(n).padStart(2,"0");
   const dh=`${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} às ${p(d.getHours())}:${p(d.getMinutes())}`;
-  const ref=$("ref").value.trim()||"Sem referência";
-  $("impressao").innerHTML=`<p class="imp-ref">${esc(ref)}</p><p class="imp-meta">Emitido em ${dh} · ${taloes.length} ${taloes.length===1?"talão lançado":"talões lançados"}</p>`+
+  const ref=refRelatorio()||"Sem referência";
+  $("impressao").innerHTML=`<p class="imp-ref">${esc(ref)}</p><p class="imp-meta">${nomeVisto()?esc(nomeVisto())+" · ":""}Emitido em ${dh} · ${taloes.length} ${taloes.length===1?"talão lançado":"talões lançados"}</p>`+
     `<table class="imp-tab"><thead><tr><th>Tamanho</th><th class="n">Pares</th><th></th></tr></thead><tbody>`+
     lin.map(l=>`<tr class="${l.total?"":"z"}"><td>${l.rotulo}</td><td class="n">${l.total}</td><td></td></tr>`).join("")+
     `</tbody><tfoot><tr><td>Total geral</td><td class="n">${geral} pares</td><td></td></tr></tfoot></table>`;
@@ -671,7 +734,7 @@ if(window.claude&&window.claude.use)window.claude.use("downloads").then(d=>dl=d)
 $("btnBaixar").onclick=async()=>{
   if(!taloes.length){toast("Nenhum talão para salvar");return}
   const txt=relatorio();
-  const nome=($("ref").value.trim()||"relatorio-taloes").replace(/[\\/:*?"<>|]/g,"-")+".txt";
+  const nome=([nomeVisto(),refRelatorio()].filter(Boolean).join(" - ")||"relatorio-taloes").replace(/[\\/:*?"<>|]/g,"-")+".txt";
   const naJanelaDoClaude=window.self!==window.top;
   if(naJanelaDoClaude){
     if(dl){try{await dl.save({filename:nome,data:"﻿"+txt});toast("Relatório salvo: "+nome)}
@@ -810,10 +873,12 @@ $("cfgPadrao").onclick=()=>{cfg={...PADRAO};preencheCfg();aplicaCfg();salvaCfg()
 aplicaCfg();
 
 render();atualizaTalao();
-// ---------- Nuvem (Firebase): login Google + talões compartilhados em tempo real ----------
+// ---------- Nuvem (Firebase): login Google + talões em tempo real ----------
 // A configuração abaixo não é segredo: quem protege os dados são as regras do Firestore (firestore.rules).
+// Papéis: dono (DONO) e supervisores veem todos os talões; funcionários veem só os próprios.
 const FIREBASE={apiKey:"AIzaSyApMGOkmo8qJmXr0WG1V449eUerqwV2KDo",authDomain:"calculadora-de-taloes.firebaseapp.com",projectId:"calculadora-de-taloes",storageBucket:"calculadora-de-taloes.firebasestorage.app",messagingSenderId:"326638476991",appId:"1:326638476991:web:ff547252fa2994006fb00a"};
-const ADMIN="leok47800@gmail.com"; // precisa ser o mesmo e-mail das regras
+const DONO="leok47800@gmail.com"; // precisa ser o mesmo e-mail das regras
+const NOME_PAPEL={dono:"dono",supervisor:"supervisor",funcionario:"funcionário"};
 let acessoOk=false;
 $("entrarLogo").src=document.querySelector("#telaCalc .logo").src;
 function telaEntrada(estado,email){
@@ -824,7 +889,7 @@ function telaEntrada(estado,email){
   const msg={
     carregando:"Carregando…",
     login:"Entre com sua conta Google para ver e lançar os talões.",
-    semAcesso:`A conta ${email||""} ainda não tem acesso. Peça ao responsável para liberar este e-mail e toque em Tentar de novo.`,
+    semAcesso:`A conta ${email||""} não tem acesso. Peça ao responsável para liberar este e-mail e toque em Tentar de novo.`,
     offline:"Sem internet para carregar o app pela primeira vez. Conecte e recarregue a página.",
   }[estado]||estado;
   $("entrarMsg").textContent=msg;
@@ -847,8 +912,10 @@ telaEntrada("carregando");
   try{db=fs.initializeFirestore(app,{localCache:fs.persistentLocalCache({tabManager:fs.persistentMultipleTabManager()})})}
   catch(e){db=fs.getFirestore(app)}
   const col=fs.collection(db,"taloes");
-  const falhou=e=>toast(e&&e.code==="permission-denied"?"Sem permissão para gravar":"Erro ao salvar na nuvem");
-  nuvem.adicionar=t=>fs.addDoc(col,t).catch(falhou);
+  const docAcesso=fs.doc(db,"config","acesso");
+  const falhou=e=>toast(e&&e.code==="permission-denied"?"Sem permissão para isso":"Erro ao salvar na nuvem");
+  // todo talão leva o dono (uid/e-mail): é o que as regras usam para separar por pessoa
+  nuvem.adicionar=t=>fs.addDoc(col,{...t,uid:usuario.uid,email:usuario.email.toLowerCase()}).catch(falhou);
   nuvem.atualizar=(id,d)=>fs.updateDoc(fs.doc(col,id),d).catch(falhou);
   nuvem.remover=id=>fs.deleteDoc(fs.doc(col,id)).catch(falhou);
   nuvem.removerVarios=async ids=>{
@@ -857,46 +924,81 @@ telaEntrada("carregando");
 
   let pararTaloes=null,pararAcesso=null,abriuCfg=false;
   const parar=()=>{if(pararTaloes)pararTaloes();if(pararAcesso)pararAcesso();pararTaloes=pararAcesso=null};
-  function ouvir(){
+
+  // recebe a lista de talões (todos ou só os do funcionário) e atualiza a tela
+  function recebe(snap){
+    todos=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.d||"").localeCompare(b.d||""));
+    aplicaFiltro();
+    const primeira=!acessoOk;
+    telaEntrada("ok");render();
+    if(primeira&&location.hash==="#personalizar"&&!abriuCfg){abriuCfg=true;mostraTela(true)}
+    else if(primeira)campos[0].focus();
+  }
+  function definePapel(p){
+    papel=p;
+    $("cfgConta").textContent=`${usuario.email} (${NOME_PAPEL[p]})`;
+    $("cfgSup").hidden=p!=="dono";$("cfgBloq").hidden=p!=="dono";
+    $("cfgFunc").hidden=p==="funcionario";
+  }
+  // dono e supervisor leem config/acesso; funcionário não pode, então cai para "só os meus talões"
+  function avaliar(){
     parar();telaEntrada("carregando");
-    pararTaloes=fs.onSnapshot(fs.query(col,fs.orderBy("d")),snap=>{
-      taloes=snap.docs.map(d=>({id:d.id,...d.data()}));
-      if(editando&&!taloes.some(t=>t.id===editando)){editando=null;limparCampos()}
-      if(confirmando&&!taloes.some(t=>t.id===confirmando))confirmando=null;
-      const primeira=!acessoOk;
-      telaEntrada("ok");render();
-      if(primeira&&location.hash==="#personalizar"&&!abriuCfg){abriuCfg=true;mostraTela(true)}
-      else if(primeira)campos[0].focus();
-    },e=>{
-      if(e.code==="permission-denied")telaEntrada("semAcesso",usuario&&usuario.email);
-      else toast("Problema de conexão com a nuvem");
-    });
-    if(usuario.email.toLowerCase()===ADMIN){
-      pararAcesso=fs.onSnapshot(docAcesso,s=>renderAcesso((s.exists()&&s.data().emails)||[]),()=>{});
+    if(usuario.email.toLowerCase()===DONO){
+      definePapel("dono");
+      pararAcesso=fs.onSnapshot(docAcesso,s=>renderAcesso(s.exists()?s.data():{}),()=>{});
+      pararTaloes=fs.onSnapshot(col,recebe,()=>toast("Problema de conexão com a nuvem"));
+      return;
     }
+    pararAcesso=fs.onSnapshot(docAcesso,s=>{
+      if(papel!=="supervisor"){
+        definePapel("supervisor");
+        if(pararTaloes)pararTaloes();
+        pararTaloes=fs.onSnapshot(col,recebe,e=>{if(e.code==="permission-denied")avaliar()});
+      }
+      renderAcesso(s.data()||{});
+    },()=>{
+      // não é supervisor: tenta como funcionário (só os próprios talões)
+      pararAcesso=null;
+      if(pararTaloes)pararTaloes();
+      definePapel("funcionario");
+      pararTaloes=fs.onSnapshot(fs.query(col,fs.where("uid","==",usuario.uid)),recebe,e=>{
+        if(e.code==="permission-denied"){papel=null;telaEntrada("semAcesso",usuario.email)}
+        else toast("Problema de conexão com a nuvem");
+      });
+    });
   }
-  function renderAcesso(lista){
-    $("listaAcesso").innerHTML=lista.length?lista.map(e=>`<li><span>${esc(e)}</span><button class="b-ghost b-mini" type="button" data-email="${esc(e)}">Remover</button></li>`).join("")
-      :'<li class="vazio ajuda">Nenhum funcionário liberado ainda.</li>';
+
+  function lista(alvo,emails,campo){
+    $(alvo).innerHTML=emails.length?emails.map(e=>`<li><span>${esc(e)}</span><button class="b-ghost b-mini" type="button" data-campo="${campo}" data-email="${esc(e)}">Remover</button></li>`).join("")
+      :`<li class="vazio ajuda">Ninguém liberado ainda.</li>`;
   }
-  const docAcesso=fs.doc(db,"config","acesso");
-  $("acessoForm").onsubmit=e=>{
+  function renderAcesso(c){
+    lista("listaAcesso",c.emails||[],"emails");
+    lista("listaSup",c.supervisores||[],"supervisores");
+    $("cfgBloqueado").checked=!!c.bloqueado;
+  }
+  const libera=(campo,input,rotulo)=>e=>{
     e.preventDefault();
-    const email=$("acessoEmail").value.trim().toLowerCase();if(!email)return;
-    fs.setDoc(docAcesso,{emails:fs.arrayUnion(email)},{merge:true}).then(()=>toast("Liberado: "+email)).catch(falhou);
-    $("acessoEmail").value="";
+    const email=$(input).value.trim().toLowerCase();if(!email)return;
+    fs.setDoc(docAcesso,{[campo]:fs.arrayUnion(email)},{merge:true}).then(()=>toast(`${rotulo}: ${email}`)).catch(falhou);
+    $(input).value="";
   };
-  $("listaAcesso").onclick=e=>{
+  $("acessoForm").onsubmit=libera("emails","acessoEmail","Funcionário liberado");
+  $("supForm").onsubmit=libera("supervisores","supEmail","Supervisor liberado");
+  const remove=e=>{
     const b=e.target.closest("button[data-email]");if(!b)return;
-    fs.setDoc(docAcesso,{emails:fs.arrayRemove(b.dataset.email)},{merge:true}).then(()=>toast("Acesso removido")).catch(falhou);
+    fs.setDoc(docAcesso,{[b.dataset.campo]:fs.arrayRemove(b.dataset.email)},{merge:true}).then(()=>toast("Acesso removido")).catch(falhou);
+  };
+  $("listaAcesso").onclick=remove;$("listaSup").onclick=remove;
+  $("cfgBloqueado").onchange=()=>{
+    const v=$("cfgBloqueado").checked;
+    fs.setDoc(docAcesso,{bloqueado:v},{merge:true}).then(()=>toast(v?"Calculadora bloqueada para todos, menos você":"Calculadora liberada")).catch(falhou);
   };
 
   fb.auth.onAuthStateChanged(auth,u=>{
-    usuario=u;parar();
-    if(!u){taloes=[];editando=confirmando=null;render();telaEntrada("login");return}
-    $("cfgConta").textContent=u.email;
-    $("cfgAdmin").hidden=u.email.toLowerCase()!==ADMIN;
-    ouvir();
+    usuario=u;parar();papel=null;
+    if(!u){todos=[];aplicaFiltro();editando=confirmando=null;render();telaEntrada("login");return}
+    avaliar();
   });
   fb.auth.getRedirectResult(auth).catch(()=>{});
   $("btnEntrar").onclick=async()=>{
@@ -909,7 +1011,7 @@ telaEntrada("carregando");
       $("entrarMsg").textContent="Não foi possível entrar: "+motivo+".";
     }
   };
-  $("btnTentar").onclick=()=>{if(usuario)ouvir();else location.reload()};
+  $("btnTentar").onclick=()=>{if(usuario)avaliar();else location.reload()};
   const sair=()=>fb.auth.signOut(auth);
   $("btnTrocar").onclick=sair;
   $("btnSair").onclick=()=>{mostraTela(false);sair()};
